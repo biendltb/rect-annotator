@@ -19,7 +19,7 @@ pip install pyqt5
 
 <img src="screenshots/usage.gif" alt="How to use" width="500"/>
 
-To make full use of our fingers, the UI has no button, menu or anything that wastes your click. We only need to press the key to adjust the angle of the image and drag the mouse to draw rectangles.
+To make full use of our fingers, the UI has no button, menu or anything that wastes your clicks. We only need to press the key to adjust the angle of the image and drag the mouse to draw rectangles.
 
 Everything we have to remember is:
 

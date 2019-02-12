@@ -13,6 +13,16 @@ except:
     quit()
 
 
+__author__ = "Bien Nguyen"
+__copyright__ = "Copyright 2019, Bien Nguyen"
+__credits__ = ["Bien Nguyen"]
+__license__ = "MIT"
+__version__ = "1.0.0"
+__maintainer__ = "Bien Nguyen"
+__email__ = "biendltb@gmail.com"
+__status__ = "Production"
+
+
 IMAGE_FOLDER_PATH = '../image_dataset/'
 
 # ###########################
@@ -121,11 +131,9 @@ class App(QtWidgets.QWidget):
 
 
     def mousePressEvent(self, e):
-        print('Mouse pressed. {}'.format(e.pos()))
         self.rect_start_pos = e.pos()
 
         self.on_drawing_img = self.display_im.get_display_im()
-        pass
 
     def mouseMoveEvent(self, e):
         display_img = self.on_drawing_img
@@ -135,20 +143,20 @@ class App(QtWidgets.QWidget):
         tmp_pixmap = draw_rect(display_img, pos_in_img_x, pos_in_img_y, w, h)
         self.img_label.setPixmap(tmp_pixmap)
 
-        # print('current height: {} - current width: {}'.format(w, h))
-        pass
-
     def mouseReleaseEvent(self, e):
-        print('Mouse release')
-
         display_img = self.display_im.get_display_im()
         pos_in_img_x, pos_in_img_y, w, h = self.get_curr_rect_params(e, display_img)
 
         # minimum size of the rectangle is 5x5
         if w >= 5 and h >= 5:
             self.display_im.add_rect(pos_in_img_x, pos_in_img_y, w, h)
-            # print('Add rect: {}'.format([pos_in_img_x, pos_in_img_y, w, h]))
-        pass
+
+
+    def closeEvent(self, e):
+        # Save data before closing the app
+        self.ann_file_manager.update_im_rects(self.image_browser.get_current_im_name(),
+                                              self.display_im.get_real_rect())
+        self.ann_file_manager.save()
 
     def get_curr_rect_params(self, e, display_img):
         # print('Mouse move')
@@ -160,6 +168,7 @@ class App(QtWidgets.QWidget):
         pos_in_img_y = self.rect_start_pos.y() + (display_img.height() - self.height) / 2
 
         return pos_in_img_x, pos_in_img_y, w, h
+
 
 # ##################################
 
@@ -185,8 +194,6 @@ class DisplayImage():
         self.pixmap_im = QtGui.QPixmap(im_path)
         self.im_scale_ratio = self.pixmap_im.width() / wnd_width
 
-        # print('Image width: {} - Scale ratio: {}'.format(self.pixmap_im.width(), self.im_scale_ratio))
-
         self.pixmap_im = self.pixmap_im.scaledToWidth(wnd_width)
 
 
@@ -205,8 +212,6 @@ class DisplayImage():
 
     def refresh_im(self, show_rect=True):
         display_pixmap = QtGui.QPixmap(self.pixmap_im)
-
-        # print('Original width: {}'.format(original_width))
 
         if show_rect:
             for rect_params in self.rects:
@@ -227,7 +232,6 @@ class DisplayImage():
                 offset_x = (display_pixmap.width() - original_width)/2
                 offset_y = (display_pixmap.height() - original_height)/2
                 display_pixmap = display_pixmap.copy(offset_x, offset_y, original_width, original_height)
-                # display_pixmap = display_pixmap.scaledToWidth(original_width)
 
         self.rect_pixmap_im = display_pixmap
 
