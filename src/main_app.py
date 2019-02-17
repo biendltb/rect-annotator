@@ -5,6 +5,7 @@
 import sys
 import os
 import glob
+import numpy as np
 
 try:
     from PyQt5 import QtWidgets, QtGui, QtCore
@@ -72,7 +73,7 @@ class App(QtWidgets.QWidget):
         self.width = self.display_im.pixmap_im.width()
         self.height = self.display_im.pixmap_im.height()
 
-        self.resize(self.display_im.pixmap_im.width(), self.display_im.pixmap_im.height())
+        self.setFixedSize(self.display_im.pixmap_im.width(), self.display_im.pixmap_im.height())
         self.center()
 
         self.img_label.setPixmap(self.display_im.get_display_im())
@@ -126,6 +127,11 @@ class App(QtWidgets.QWidget):
 
         if rotating_angle != 0:
             self.display_im.angle += rotating_angle
+
+            # Reset angle when it's a round
+            if abs(self.display_im.angle/360) > 1:
+                self.display_im %= 360
+
             tmp_img = self.display_im.get_display_im()
             self.img_label.setPixmap(tmp_img)
 
@@ -151,6 +157,11 @@ class App(QtWidgets.QWidget):
         if w >= 5 and h >= 5:
             self.display_im.add_rect(pos_in_img_x, pos_in_img_y, w, h)
 
+    def mouseDoubleClickEvent(self, e):
+        click_pos = [e.pos().x(), e.pos().y()]
+
+        self.check_falling_in(click_pos, self.display_im.angle)
+
 
     def closeEvent(self, e):
         # Save data before closing the app
@@ -158,6 +169,7 @@ class App(QtWidgets.QWidget):
                                               self.display_im.get_real_rect())
         self.ann_file_manager.save()
 
+    # Collect current data about the drawn rectangle
     def get_curr_rect_params(self, e, display_img):
         # print('Mouse move')
         w = e.pos().x() - self.rect_start_pos.x()
@@ -169,15 +181,73 @@ class App(QtWidgets.QWidget):
 
         return pos_in_img_x, pos_in_img_y, w, h
 
+    # check if the click falls in one of existing rectangle
+    def check_falling_in(self, pos, im_angle):
+        # position of the click point to the center of the windows center
+        pos_x = pos[0] - self.width/2
+        pos_y = pos[1] - self.height/2
+
+        for rect in self.display_im.rects:
+            rotate_angle = rect.im_angle - im_angle
+            cos = np.cos(np.radians(rotate_angle))
+            sin = np.sin(np.radians(rotate_angle))
+            rotation_mat = [[cos, -sin],
+                            [sin, cos]]
+
+            _p = np.matmul(rotation_mat, [pos_x, pos_y])
+
+            # click position in the new image
+            new_w, new_h = self.get_im_size_at_angle(rect.im_angle)
+
+            new_p_x = _p[0] + new_w/2
+            new_p_y = _p[1] + new_h/2
+
+            # position of the click position to the top left of the rectangle
+            new_p_x -= rect.pos_x
+            new_p_y -= rect.pos_y
+
+            if new_p_x > 0 and new_p_x < rect.width and new_p_y > 0 and new_p_y < rect.height:
+                print('Fall in')
+
+
+    # Get image size at an arbitrary angle
+    def get_im_size_at_angle(self, angle):
+        # Since the rectangle is symmetric and we only care about the image size
+        _angle = angle
+        if angle < 0:
+            _angle = 360 + angle
+        if abs(_angle) > 180:
+            _angle %= 180
+
+        if abs(_angle) < 90:
+            w = self.display_im.pixmap_im.width()
+            h = self.display_im.pixmap_im.height()
+        else:
+            w = self.display_im.pixmap_im.height()
+            h = self.display_im.pixmap_im.width()
+            _angle %= 90
+
+        cos = np.cos(np.radians(_angle))
+        sin = np.sin(np.radians(_angle))
+
+        new_w = w*cos + h*sin
+        new_h = w*sin + h*cos
+
+        return round(new_w), round(new_h)
+
+
+
+
+
 
 # ##################################
 
-def draw_rect(pixmap_img, x, y, w, h):
+def draw_rect(pixmap_img, x, y, w, h, color=QtCore.Qt.green):
     tmp_pixmap = QtGui.QPixmap(pixmap_img)
     # create painter instance with pixmap
     painterInstance = QtGui.QPainter(tmp_pixmap)
     # set rectangle color and thickness
-    penRectangle = QtGui.QPen(QtCore.Qt.green)
+    penRectangle = QtGui.QPen(color)
     penRectangle.setWidth(2)
 
     # draw rectangle on painter
@@ -196,14 +266,11 @@ class DisplayImage():
 
         self.pixmap_im = self.pixmap_im.scaledToWidth(wnd_width)
 
-
-
-        self.angle = 0 # current angle of the displaying image
+        self.angle = 0 # current angle of the displaying image (clockwise: positive, anti-clockwise: negative)
 
         tmp_rects = []
         for rect in real_rects:
-            tmp_rect = rect[:]
-            tmp_rect[:-1] = [x/self.im_scale_ratio for x in rect[:-1]]
+            tmp_rect = rect.scale(1/self.im_scale_ratio)
             tmp_rects.append(tmp_rect)
 
         self.rects = tmp_rects # current rectangle overlay the image
@@ -214,18 +281,18 @@ class DisplayImage():
         display_pixmap = QtGui.QPixmap(self.pixmap_im)
 
         if show_rect:
-            for rect_params in self.rects:
+            for rect in self.rects:
                 original_width = display_pixmap.width()
                 original_height = display_pixmap.height()
 
                 # Rotate the image following current angle
-                display_pixmap = display_pixmap.transformed(QtGui.QTransform().rotate(rect_params[4]),
+                display_pixmap = display_pixmap.transformed(QtGui.QTransform().rotate(rect.im_angle),
                                                             QtCore.Qt.SmoothTransformation)
 
-                display_pixmap = draw_rect(display_pixmap, rect_params[0], rect_params[1], rect_params[2], rect_params[3])
+                display_pixmap = draw_rect(display_pixmap, rect.pos_x, rect.pos_y, rect.width, rect.height)
 
                 # Rotate back to the original image
-                display_pixmap = display_pixmap.transformed(QtGui.QTransform().rotate(-rect_params[4]),
+                display_pixmap = display_pixmap.transformed(QtGui.QTransform().rotate(-rect.im_angle),
                                                             QtCore.Qt.SmoothTransformation)
 
                 # Crop to get only the image
@@ -242,16 +309,15 @@ class DisplayImage():
         return display_pixmap
 
     def add_rect(self, pos_in_img_x, pos_in_img_y, w, h):
-        self.rects.append([pos_in_img_x, pos_in_img_y, w, h, self.angle])
+        self.rects.append(Rectangle(pos_in_img_x, pos_in_img_y, w, h, self.angle))
         self.refresh_im()
 
     # Get rectangles in the real image size
     def get_real_rect(self):
         real_rects = []
         for rect in self.rects:
-            tmp_rect = rect[:]
             # multiply with image scale ratio to get the real position except the angle
-            tmp_rect[:-1] = [x * self.im_scale_ratio for x in tmp_rect[:-1]]
+            tmp_rect = rect.scale(self.im_scale_ratio)
             real_rects.append(tmp_rect)
 
         return real_rects
@@ -302,7 +368,7 @@ class ImageBrowser():
 
 # ############################
 
-class AnnotationFileManager():
+class AnnotationFileManager:
     def __init__(self, file_path):
         self.file_path = file_path
         self.anns = []
@@ -333,7 +399,7 @@ class AnnotationFileManager():
         rects = []
         for im_info in self.anns:
             if im_info[0] == im_name:
-                rects.append(im_info[1:])
+                rects.append(Rectangle(im_info[1], im_info[2], im_info[3], im_info[4], im_info[5]))
 
         return rects
 
@@ -342,7 +408,7 @@ class AnnotationFileManager():
 
         for rect in rects:
             ann = [im_name]
-            ann.extend(rect)
+            ann.extend(rect.get_params())
             tmp_anns.append(ann)
 
         self.anns = tmp_anns
@@ -351,6 +417,23 @@ class AnnotationFileManager():
         with open(self.file_path, 'w') as f:
             for ann in self.anns:
                 f.write(' '.join(str(x) for x in ann) + '\n')
+
+# ############################
+# Rectangle overlays image
+class Rectangle:
+    def __init__(self, pos_x, pos_y, width, height, im_angle):
+        self.pos_x = pos_x
+        self.pos_y = pos_y
+        self.width = width
+        self.height = height
+        self.im_angle = im_angle
+
+    def scale(self, ratio):
+        return Rectangle(self.pos_x*ratio, self.pos_y*ratio, self.width*ratio, self.height*ratio, self.im_angle)
+
+    def get_params(self):
+        return [self.pos_x, self.pos_y, self.width, self.height, self.im_angle]
+
 
 
 # ############################
